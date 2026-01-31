@@ -116,14 +116,21 @@ jobs:
           fi
           echo "GitHub CLI version:"
           gh --version
+          
+          # Verify jq is available (required for parsing JSON inputs)
+          if ! command -v jq &> /dev/null; then
+            echo "jq is not installed"
+            exit 1
+          fi
+          echo "jq version:"
+          jq --version
       
       - name: Configure GitHub CLI
         shell: bash
         env:
           GH_TOKEN: ${{ steps.setup-token.outputs.token }}
         run: |
-          # Authenticate GitHub CLI
-          echo "$GH_TOKEN" | gh auth login --with-token
+          # Verify authentication (GH_TOKEN is automatically used by gh CLI)
           gh auth status
       
       - name: Execute Operation

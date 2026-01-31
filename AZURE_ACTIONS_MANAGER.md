@@ -135,16 +135,22 @@ jobs:
 | `enable-AzPSSession` | No | `false` | Enable Azure PowerShell login |
 | `environment` | No | `azurecloud` | Azure environment |
 
-### GitHub Actions Management Inputs
+### GitHub Actions Management Inputs (Workflow Inputs)
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| `github-token` | **Yes** | - | GitHub token with workflow permissions |
 | `target-repository` | No | Current repo | Target repository (owner/repo) |
 | `workflow-file` | No | - | Workflow file name (e.g., ci.yml) |
 | `workflow-ref` | No | `main` | Git reference (branch, tag, or SHA) |
 | `workflow-inputs` | No | `{}` | Workflow inputs as JSON string |
 | `operation` | No | `list-workflows` | Operation to perform |
+
+### Secrets
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `AZURE_CREDS` | No | Azure credentials in JSON format (alternative to individual parameters) |
+| `GITHUB_PAT` | No | GitHub Personal Access Token with workflow permissions. If not provided, uses default GITHUB_TOKEN |
 
 ### Operations
 
@@ -159,8 +165,9 @@ jobs:
 
 | Output | Description |
 |--------|-------------|
-| `workflow-run-id` | ID of the triggered workflow run |
-| `workflow-status` | Status of the operation |
+| `workflow-status` | Status of the operation (success, triggered, etc.) |
+
+**Note**: The workflow-run-id is not currently captured as GitHub CLI doesn't return it immediately for async workflow runs.
 
 ## Advanced Usage
 
@@ -176,26 +183,38 @@ permissions:
   actions: write
 
 jobs:
+  # Note: Azure authentication is done within the reusable workflow
   deploy-with-azure:
+    uses: ./.github/workflows/azure-actions-manager-reusable.yml
+    with:
+      # Azure OIDC authentication
+      client-id: ${{ vars.AZURE_CLIENT_ID }}
+      tenant-id: ${{ vars.AZURE_TENANT_ID }}
+      subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      
+      # Trigger deployment workflow
+      operation: trigger-workflow
+      target-repository: my-org/my-app
+      workflow-file: azure-deploy.yml
+      workflow-ref: main
+      workflow-inputs: '{"azure_resource_group": "production-rg"}'
+    secrets:
+      AZURE_CREDS: ${{ secrets.AZURE_CREDENTIALS }}
+      GITHUB_PAT: ${{ secrets.GH_PAT }}
+  
+  # Separate job to use Azure CLI after authentication
+  use-azure-cli:
     runs-on: ubuntu-latest
+    needs: deploy-with-azure
     steps:
       - uses: actions/checkout@v4
       
-      - name: Login to Azure and trigger deployment
-        uses: ./action-manager.yml
+      - name: Azure Login
+        uses: ./
         with:
-          # Azure OIDC authentication
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          
-          # Trigger deployment workflow
-          github-token: ${{ secrets.GH_PAT }}
-          operation: trigger-workflow
-          target-repository: my-org/my-app
-          workflow-file: azure-deploy.yml
-          workflow-ref: main
-          workflow-inputs: '{"azure_resource_group": "production-rg"}'
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       
       - name: Use Azure CLI
         run: |
@@ -209,38 +228,40 @@ jobs:
 name: Coordinate Multiple Repositories
 on: [workflow_dispatch]
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
-  coordinate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Trigger frontend deployment
-        uses: ./action-manager.yml
-        with:
-          github-token: ${{ secrets.GH_PAT }}
-          operation: trigger-workflow
-          target-repository: my-org/frontend
-          workflow-file: deploy.yml
-          workflow-ref: main
-      
-      - name: Trigger backend deployment
-        uses: ./action-manager.yml
-        with:
-          github-token: ${{ secrets.GH_PAT }}
-          operation: trigger-workflow
-          target-repository: my-org/backend
-          workflow-file: deploy.yml
-          workflow-ref: main
-      
-      - name: Trigger infrastructure update
-        uses: ./action-manager.yml
-        with:
-          github-token: ${{ secrets.GH_PAT }}
-          operation: trigger-workflow
-          target-repository: my-org/infrastructure
-          workflow-file: terraform-apply.yml
-          workflow-ref: main
+  trigger-frontend:
+    uses: ./.github/workflows/azure-actions-manager-reusable.yml
+    with:
+      operation: trigger-workflow
+      target-repository: my-org/frontend
+      workflow-file: deploy.yml
+      workflow-ref: main
+    secrets:
+      GITHUB_PAT: ${{ secrets.GH_PAT }}
+  
+  trigger-backend:
+    uses: ./.github/workflows/azure-actions-manager-reusable.yml
+    with:
+      operation: trigger-workflow
+      target-repository: my-org/backend
+      workflow-file: deploy.yml
+      workflow-ref: main
+    secrets:
+      GITHUB_PAT: ${{ secrets.GH_PAT }}
+  
+  trigger-infrastructure:
+    uses: ./.github/workflows/azure-actions-manager-reusable.yml
+    with:
+      operation: trigger-workflow
+      target-repository: my-org/infrastructure
+      workflow-file: terraform-apply.yml
+      workflow-ref: main
+    secrets:
+      GITHUB_PAT: ${{ secrets.GH_PAT }}
 ```
 
 ## Security Considerations
