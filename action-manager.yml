@@ -34,7 +34,6 @@ inputs:
   target-repository:
     description: 'Target repository in format owner/repo'
     required: false
-    default: ${{ github.repository }}
   workflow-file:
     description: 'Workflow file name to trigger (e.g., ci.yml)'
     required: false
@@ -105,6 +104,11 @@ runs:
         OPERATION: ${{ inputs.operation }}
       run: |
         set -e
+        
+        # Set default repository if not provided
+        if [ -z "$TARGET_REPO" ]; then
+          TARGET_REPO="${GITHUB_REPOSITORY}"
+        fi
         
         echo "::group::Executing operation: $OPERATION"
         
