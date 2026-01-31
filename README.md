@@ -1,6 +1,7 @@
 # Azure Login Action
 
 - [Azure Login Action](#azure-login-action)
+  - [Azure GitHub Actions Manager Interface](#azure-github-actions-manager-interface)
   - [Input Parameters](#input-parameters)
     - [`client-id`](#client-id)
     - [`subscription-id`](#subscription-id)
@@ -30,6 +31,30 @@
   - [Contributing](#contributing)
 
 With the [Azure Login Action](https://github.com/Azure/login), you can login to Azure and run [Azure CLI](https://learn.microsoft.com/cli/azure/) and [Azure PowerShell](https://learn.microsoft.com/powershell/azure) scripts.
+
+## Azure GitHub Actions Manager Interface
+
+> [!NOTE]
+> **NEW**: This repository now includes an interface to manage GitHub Actions workflows through Azure integration. This enables you to list, trigger, and monitor workflows across multiple repositories with Azure authentication.
+
+For detailed documentation, see [AZURE_ACTIONS_MANAGER.md](AZURE_ACTIONS_MANAGER.md).
+
+**Key features:**
+- 🚀 Trigger workflows remotely in any accessible repository
+- 📊 Monitor workflow runs and their status
+- 🔄 Manage multiple repositories from a single interface
+- 🔐 Integrated Azure authentication for enhanced security
+
+**Quick example:**
+
+```yaml
+- uses: ./action-manager.yml
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    operation: trigger-workflow
+    target-repository: owner/repo
+    workflow-file: deploy.yml
+```
 
 Azure Login Action supports different ways of authentication with Azure.
 
