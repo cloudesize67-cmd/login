@@ -1,0 +1,220 @@
+name: Azure GitHub Actions Manager
+
+on:
+  workflow_call:
+    inputs:
+      # Azure authentication inputs
+      client-id:
+        description: 'ClientId of the Azure Service principal'
+        type: string
+        required: false
+      tenant-id:
+        description: 'TenantId of the Azure Service principal'
+        type: string
+        required: false
+      subscription-id:
+        description: 'Azure subscriptionId'
+        type: string
+        required: false
+      enable-AzPSSession:
+        description: 'Enable Azure PowerShell Login'
+        type: boolean
+        required: false
+        default: false
+      environment:
+        description: 'Azure environment (azurecloud, azurestack, etc.)'
+        type: string
+        required: false
+        default: 'azurecloud'
+      
+      # GitHub Actions management inputs
+      target-repository:
+        description: 'Target repository in format owner/repo'
+        type: string
+        required: false
+      workflow-file:
+        description: 'Workflow file name to trigger (e.g., ci.yml)'
+        type: string
+        required: false
+      workflow-ref:
+        description: 'Git reference for the workflow (branch, tag, or commit SHA)'
+        type: string
+        required: false
+        default: 'main'
+      workflow-inputs:
+        description: 'Workflow inputs as JSON string'
+        type: string
+        required: false
+        default: '{}'
+      operation:
+        description: 'Operation: list-workflows, trigger-workflow, get-workflow-runs, or manage-repositories'
+        type: string
+        required: false
+        default: 'list-workflows'
+    
+    secrets:
+      AZURE_CREDS:
+        description: 'Azure credentials in JSON format'
+        required: false
+      GITHUB_PAT:
+        description: 'GitHub Personal Access Token with workflow permissions'
+        required: false
+    
+    outputs:
+      workflow-status:
+        description: 'Status of the workflow operation'
+        value: ${{ jobs.execute-manager.outputs.status }}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  execute-manager:
+    name: 'Execute Azure Actions Manager'
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.execute-operation.outputs.status }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Azure Login
+        if: inputs.client-id != '' || secrets.AZURE_CREDS != ''
+        uses: ./
+        with:
+          client-id: ${{ inputs.client-id }}
+          tenant-id: ${{ inputs.tenant-id }}
+          subscription-id: ${{ inputs.subscription-id }}
+          creds: ${{ secrets.AZURE_CREDS }}
+          enable-AzPSSession: ${{ inputs.enable-AzPSSession }}
+          environment: ${{ inputs.environment }}
+      
+      - name: Setup GitHub Token
+        id: setup-token
+        shell: bash
+        env:
+          GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
+          DEFAULT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "$GITHUB_PAT" ]; then
+            echo "Using provided GitHub PAT"
+            echo "token=$GITHUB_PAT" >> $GITHUB_OUTPUT
+          else
+            echo "Using default GITHUB_TOKEN"
+            echo "token=$DEFAULT_TOKEN" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Setup GitHub CLI
+        shell: bash
+        run: |
+          # Verify gh CLI is available
+          if ! command -v gh &> /dev/null; then
+            echo "GitHub CLI is not installed"
+            exit 1
+          fi
+          echo "GitHub CLI version:"
+          gh --version
+          
+          # Verify jq is available (required for parsing JSON inputs)
+          if ! command -v jq &> /dev/null; then
+            echo "jq is not installed"
+            exit 1
+          fi
+          echo "jq version:"
+          jq --version
+      
+      - name: Configure GitHub CLI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.setup-token.outputs.token }}
+        run: |
+          # Verify authentication (GH_TOKEN is automatically used by gh CLI)
+          gh auth status
+      
+      - name: Execute Operation
+        id: execute-operation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.setup-token.outputs.token }}
+          TARGET_REPO: ${{ inputs.target-repository }}
+          WORKFLOW_FILE: ${{ inputs.workflow-file }}
+          WORKFLOW_REF: ${{ inputs.workflow-ref }}
+          WORKFLOW_INPUTS: ${{ inputs.workflow-inputs }}
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          set -e
+          
+          # Set default repository if not provided
+          if [ -z "$TARGET_REPO" ]; then
+            TARGET_REPO="${GITHUB_REPOSITORY}"
+          fi
+          
+          echo "::group::Executing operation: $OPERATION"
+          
+          case "$OPERATION" in
+            "list-workflows")
+              echo "Listing workflows in repository: $TARGET_REPO"
+              gh workflow list --repo "$TARGET_REPO"
+              echo "status=success" >> $GITHUB_OUTPUT
+              ;;
+              
+            "trigger-workflow")
+              if [ -z "$WORKFLOW_FILE" ]; then
+                echo "Error: workflow-file is required for trigger-workflow operation"
+                exit 1
+              fi
+              echo "Triggering workflow: $WORKFLOW_FILE in $TARGET_REPO on ref: $WORKFLOW_REF"
+              
+              # Trigger the workflow
+              if [ "$WORKFLOW_INPUTS" != "{}" ] && [ -n "$WORKFLOW_INPUTS" ]; then
+                # Parse JSON inputs and pass as -f flags
+                INPUT_FLAGS=""
+                while IFS= read -r line; do
+                  INPUT_FLAGS="$INPUT_FLAGS $line"
+                done < <(echo "$WORKFLOW_INPUTS" | jq -r 'to_entries | .[] | "-f \(.key)=\(.value)"')
+                
+                gh workflow run "$WORKFLOW_FILE" --repo "$TARGET_REPO" --ref "$WORKFLOW_REF" $INPUT_FLAGS
+              else
+                gh workflow run "$WORKFLOW_FILE" --repo "$TARGET_REPO" --ref "$WORKFLOW_REF"
+              fi
+              
+              echo "Workflow triggered successfully"
+              echo "status=triggered" >> $GITHUB_OUTPUT
+              ;;
+              
+            "get-workflow-runs")
+              if [ -z "$WORKFLOW_FILE" ]; then
+                echo "Listing all workflow runs in repository: $TARGET_REPO"
+                gh run list --repo "$TARGET_REPO" --limit 10
+              else
+                echo "Listing workflow runs for: $WORKFLOW_FILE in repository: $TARGET_REPO"
+                gh run list --workflow "$WORKFLOW_FILE" --repo "$TARGET_REPO" --limit 10
+              fi
+              echo "status=success" >> $GITHUB_OUTPUT
+              ;;
+              
+            "manage-repositories")
+              echo "Listing accessible repositories with GitHub token"
+              gh repo list --limit 20
+              echo "status=success" >> $GITHUB_OUTPUT
+              ;;
+              
+            *)
+              echo "Error: Unknown operation: $OPERATION"
+              echo "Valid operations: list-workflows, trigger-workflow, get-workflow-runs, manage-repositories"
+              exit 1
+              ;;
+          esac
+          
+          echo "::endgroup::"
+      
+      - name: Azure CLI Integration Status
+        if: inputs.client-id != '' || secrets.AZURE_CREDS != ''
+        shell: bash
+        run: |
+          echo "::group::Azure CLI Integration Status"
+          echo "Azure CLI is authenticated and available for additional operations"
+          az account show --output table || echo "Azure account information not available"
+          echo "::endgroup::"

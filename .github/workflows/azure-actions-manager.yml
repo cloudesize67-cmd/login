@@ -1,0 +1,81 @@
+name: Azure GitHub Actions Manager Interface Demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Operation to perform'
+        required: true
+        type: choice
+        options:
+          - list-workflows
+          - trigger-workflow
+          - get-workflow-runs
+          - manage-repositories
+      target-repository:
+        description: 'Target repository (owner/repo format)'
+        required: false
+        default: ''
+      workflow-file:
+        description: 'Workflow file name (e.g., ci.yml)'
+        required: false
+        default: ''
+      workflow-ref:
+        description: 'Git reference (branch/tag/SHA)'
+        required: false
+        default: 'main'
+
+permissions:
+  id-token: write
+  contents: read
+  actions: read
+
+jobs:
+  # Main job using the reusable workflow
+  azure-actions-manager:
+    name: 'Execute Azure Actions Manager'
+    uses: ./.github/workflows/azure-actions-manager-reusable.yml
+    with:
+      # Azure authentication (OIDC recommended)
+      client-id: ${{ vars.AZURE_CLIENT_ID }}
+      tenant-id: ${{ vars.AZURE_TENANT_ID }}
+      subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      
+      # GitHub Actions management
+      target-repository: ${{ inputs.target-repository }}
+      workflow-file: ${{ inputs.workflow-file }}
+      workflow-ref: ${{ inputs.workflow-ref }}
+      operation: ${{ inputs.operation }}
+    secrets:
+      AZURE_CREDS: ${{ secrets.AZURE_CREDENTIALS }}
+      GITHUB_PAT: ${{ secrets.GH_PAT }}
+
+  # Example: Direct usage showing multiple operations
+  direct-usage-example:
+    name: 'Direct Usage Example'
+    runs-on: ubuntu-latest
+    if: github.event.inputs.operation == 'list-workflows'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup GitHub CLI
+        run: |
+          gh --version
+      
+      - name: List workflows in current repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "### Workflows in ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          gh workflow list --repo ${{ github.repository }} >> $GITHUB_STEP_SUMMARY
+      
+      - name: Summary
+        run: |
+          echo "### Workflow Management Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Successfully accessed GitHub Actions capabilities" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Interface is ready for multi-repository workflow management" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Operation performed:** ${{ inputs.operation }}" >> $GITHUB_STEP_SUMMARY
