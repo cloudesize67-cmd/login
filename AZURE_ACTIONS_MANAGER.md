@@ -1,6 +1,6 @@
 # Azure GitHub Actions Manager Interface
 
-This interface provides a powerful way to manage GitHub Actions workflows through Azure integration. It enables you to:
+This interface provides a powerful way to manage GitHub Actions workflows through Azure integration. It is implemented as a reusable workflow that enables you to:
 
 - **List workflows** across different repositories
 - **Trigger workflows** remotely with custom inputs
@@ -16,6 +16,7 @@ This interface provides a powerful way to manage GitHub Actions workflows throug
 - 🔄 Multi-repository support
 - 🛡️ GitHub CLI integration for reliable API interactions
 - 📝 Comprehensive logging and error handling
+- ♻️ Reusable workflow pattern for easy integration
 
 ## Quick Start
 
@@ -32,6 +33,8 @@ This interface provides a powerful way to manage GitHub Actions workflows throug
 
 ### Basic Usage
 
+The Azure GitHub Actions Manager is implemented as a reusable workflow. Here's how to use it:
+
 #### Example 1: List Workflows in Current Repository
 
 ```yaml
@@ -41,18 +44,15 @@ on: [workflow_dispatch]
 permissions:
   id-token: write
   contents: read
+  actions: read
 
 jobs:
   list-workflows:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: List all workflows
-        uses: ./action-manager.yml
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          operation: list-workflows
+    uses: ./.github/workflows/azure-actions-manager-reusable.yml
+    with:
+      operation: list-workflows
+    secrets:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 #### Example 2: Trigger a Workflow in Another Repository
@@ -64,25 +64,23 @@ on: [workflow_dispatch]
 permissions:
   id-token: write
   contents: read
+  actions: write
 
 jobs:
   trigger-workflow:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Trigger workflow
-        uses: ./action-manager.yml
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          github-token: ${{ secrets.GH_PAT }}
-          operation: trigger-workflow
-          target-repository: owner/repository
-          workflow-file: deploy.yml
-          workflow-ref: main
-          workflow-inputs: '{"environment": "production"}'
+    uses: ./.github/workflows/azure-actions-manager-reusable.yml
+    with:
+      client-id: ${{ vars.AZURE_CLIENT_ID }}
+      tenant-id: ${{ vars.AZURE_TENANT_ID }}
+      subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      operation: trigger-workflow
+      target-repository: owner/repository
+      workflow-file: deploy.yml
+      workflow-ref: main
+      workflow-inputs: '{"environment": "production"}'
+    secrets:
+      AZURE_CREDS: ${{ secrets.AZURE_CREDENTIALS }}
+      GITHUB_PAT: ${{ secrets.GH_PAT }}
 ```
 
 #### Example 3: Monitor Workflow Runs
@@ -91,18 +89,18 @@ jobs:
 name: Monitor Workflows
 on: [workflow_dispatch]
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   monitor:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Get workflow runs
-        uses: ./action-manager.yml
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          operation: get-workflow-runs
-          workflow-file: ci.yml
+    uses: ./.github/workflows/azure-actions-manager-reusable.yml
+    with:
+      operation: get-workflow-runs
+      workflow-file: ci.yml
+    secrets:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 #### Example 4: Manage Multiple Repositories
@@ -111,17 +109,17 @@ jobs:
 name: Manage Repositories
 on: [workflow_dispatch]
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   manage:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: List accessible repositories
-        uses: ./action-manager.yml
-        with:
-          github-token: ${{ secrets.GH_PAT }}
-          operation: manage-repositories
+    uses: ./.github/workflows/azure-actions-manager-reusable.yml
+    with:
+      operation: manage-repositories
+    secrets:
+      GITHUB_PAT: ${{ secrets.GH_PAT }}
 ```
 
 ## Input Parameters

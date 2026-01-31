@@ -31,57 +31,51 @@ permissions:
   actions: read
 
 jobs:
+  # Main job using the reusable workflow
   azure-actions-manager:
-    name: 'Execute Azure Actions Manager Interface'
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    name: 'Execute Azure Actions Manager'
+    uses: ./.github/workflows/azure-actions-manager-reusable.yml
+    with:
+      # Azure authentication (OIDC recommended)
+      client-id: ${{ vars.AZURE_CLIENT_ID }}
+      tenant-id: ${{ vars.AZURE_TENANT_ID }}
+      subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       
-      - name: Azure GitHub Actions Manager
-        uses: ./
-        with:
-          # Azure authentication (OIDC recommended)
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          
-          # GitHub Actions management
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          target-repository: ${{ github.event.inputs.target-repository || github.repository }}
-          workflow-file: ${{ github.event.inputs.workflow-file }}
-          workflow-ref: ${{ github.event.inputs.workflow-ref }}
-          operation: ${{ github.event.inputs.operation }}
-      
-      - name: Display Results
-        shell: bash
-        run: |
-          echo "::notice::Azure GitHub Actions Manager operation completed successfully"
-          echo "Operation: ${{ github.event.inputs.operation }}"
-          echo "Target Repository: ${{ github.event.inputs.target-repository || github.repository }}"
+      # GitHub Actions management
+      target-repository: ${{ inputs.target-repository }}
+      workflow-file: ${{ inputs.workflow-file }}
+      workflow-ref: ${{ inputs.workflow-ref }}
+      operation: ${{ inputs.operation }}
+    secrets:
+      AZURE_CREDS: ${{ secrets.AZURE_CREDENTIALS }}
+      GITHUB_PAT: ${{ secrets.GH_PAT }}
 
-  # Example: List workflows across multiple repositories
-  list-multiple-repositories:
-    name: 'List Workflows from Multiple Repositories'
+  # Example: Direct usage showing multiple operations
+  direct-usage-example:
+    name: 'Direct Usage Example'
     runs-on: ubuntu-latest
-    if: github.event.inputs.operation == 'manage-repositories'
+    if: github.event.inputs.operation == 'list-workflows'
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      - name: List workflows from current repository
-        uses: ./
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          operation: list-workflows
-          target-repository: ${{ github.repository }}
+      - name: Setup GitHub CLI
+        run: |
+          gh --version
+      
+      - name: List workflows in current repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "### Workflows in ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          gh workflow list --repo ${{ github.repository }} >> $GITHUB_STEP_SUMMARY
       
       - name: Summary
-        shell: bash
         run: |
           echo "### Workflow Management Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ Successfully accessed GitHub Actions capabilities" >> $GITHUB_STEP_SUMMARY
           echo "✅ Interface is ready for multi-repository workflow management" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Operation performed:** ${{ inputs.operation }}" >> $GITHUB_STEP_SUMMARY
